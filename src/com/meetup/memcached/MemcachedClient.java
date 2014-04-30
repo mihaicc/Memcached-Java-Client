@@ -27,7 +27,7 @@ import java.nio.channels.spi.*;
 import java.io.*;
 import java.net.URLEncoder;
 
-import org.apache.log4j.Logger;
+//import org.apache.log4j.Logger;
 
 /**
  * This is a Memcached client for the Java platform available from
@@ -158,7 +158,7 @@ public class MemcachedClient {
 
 	// logger
 	private static Logger log =
-		Logger.getLogger( MemcachedClient.class.getName() );
+		Logger.getLogger( MemcachedClient.class.getName(),3); //3 is for logging errors only
 
 	// return codes
 	private static final String VALUE        = "VALUE";			// start of value line from server
@@ -182,7 +182,7 @@ public class MemcachedClient {
 
 	// default compression threshold
 	private static final int COMPRESS_THRESH = 30720;
-    
+
 	// values for cache flags 
 	public static final int MARKER_BYTE             = 1;
 	public static final int MARKER_BOOLEAN          = 8192;
@@ -199,7 +199,7 @@ public class MemcachedClient {
 	public static final int MARKER_BYTEARR          = 4096;
 	public static final int F_COMPRESSED            = 2;
 	public static final int F_SERIALIZED            = 8;
-	
+
 	// flags
 	private boolean sanitizeKeys;
 	private boolean primitiveAsString;
@@ -358,7 +358,7 @@ public class MemcachedClient {
 	public void setCompressEnable( boolean compressEnable ) {
 		this.compressEnable = compressEnable;
 	}
-    
+
 	/**
 	 * Sets the required length for data to be considered for compression.
 	 *
@@ -439,7 +439,7 @@ public class MemcachedClient {
 		}
 
 		// get SockIO obj from hash or from key
-		SockIOPool.SockIO sock = pool.getSock( key, hashCode );
+		SockIOPool.SockIO sock = pool.getSock( key, hashCode,"get" );
 
 		// return false if unable to get SockIO obj
 		if ( sock == null ) {
@@ -454,11 +454,11 @@ public class MemcachedClient {
 			command.append( " " + expiry.getTime() / 1000 );
 
 		command.append( "\r\n" );
-		
+
 		try {
 			sock.write( command.toString().getBytes() );
 			sock.flush();
-			
+
 			// if we get appropriate response back, then we return true
 			String line = sock.readLine();
 			if ( DELETED.equals( line ) ) {
@@ -506,7 +506,7 @@ public class MemcachedClient {
 
 		return false;
 	}
-    
+
 	/**
 	 * Stores data on the server; only the key and the value are specified.
 	 *
@@ -697,25 +697,25 @@ public class MemcachedClient {
 		}
 
 		// get SockIO obj
-		SockIOPool.SockIO sock = pool.getSock( key, hashCode );
-		
+		SockIOPool.SockIO sock = pool.getSock( key, hashCode, "set" );
+
 		if ( sock == null ) {
 			if ( errorHandler != null )
 				errorHandler.handleErrorOnSet( this, new IOException( "no socket to server available" ), key );
 			return false;
 		}
-		
+
 		if ( expiry == null )
 			expiry = new Date(0);
 
 		// store flags
 		int flags = 0;
-		
+
 		// byte array to hold data
 		byte[] val;
 
-        if ( NativeHandler.isHandled( value ) ) {
-			
+		if ( NativeHandler.isHandled( value ) ) {
+
 			if ( asString ) {
 				// useful for sharing data between java and non-java
 				// and also for storing ints for the increment method
@@ -784,7 +784,7 @@ public class MemcachedClient {
 				return false;
 			}
 		}
-		
+
 		// now try to compress if we want to
 		// and if the length is over the threshold 
 		if ( compressEnable && val.length > compressThreshold ) {
@@ -799,7 +799,7 @@ public class MemcachedClient {
 				gos.write( val, 0, val.length );
 				gos.finish();
 				gos.close();
-				
+
 				// store it and set compression flag
 				val = bos.toByteArray();
 				flags |= F_COMPRESSED;
@@ -896,7 +896,7 @@ public class MemcachedClient {
 	public boolean storeCounter( String key, Long counter ) {
 		return set( "set", key, counter, null, null, true );
 	}
-    
+
 	/** 
 	 * Store a counter to memcached given a key
 	 * 
@@ -947,7 +947,7 @@ public class MemcachedClient {
 			if ( log.isInfoEnabled() )
 				log.info( String.format( "Failed to parse Long value for key: %s", key ) );
 		}
-		
+
 		return counter;
 	}
 
@@ -1063,7 +1063,7 @@ public class MemcachedClient {
 	public long incr( String key, long inc, Integer hashCode ) {
 		return incrdecr( "incr", key, inc, hashCode );
 	}
-	
+
 	/**
 	 * Decrement the value at the specified key by 1, and then return it.
 	 *
@@ -1132,15 +1132,20 @@ public class MemcachedClient {
 			return -1;
 		}
 
+		SockIOPool.SockIO sock = null;
 		// get SockIO obj for given cache key
-		SockIOPool.SockIO sock = pool.getSock( key, hashCode );
+		if(cmdname.contains("in")) 
+			sock = pool.getSock( key, hashCode,"set" );
+		else 
+			sock = pool.getSock( key, hashCode,"get" );
+
 
 		if ( sock == null ) {
 			if ( errorHandler != null )
 				errorHandler.handleErrorOnSet( this, new IOException( "no socket to server available" ), key );
 			return -1;
 		}
-		
+
 		try {
 			String cmd = String.format( "%s %s %d\r\n", cmdname, key, inc );
 			if ( log.isDebugEnabled() )
@@ -1167,7 +1172,7 @@ public class MemcachedClient {
 
 					log.error( String.format( "Failed to parse Long value for key: %s", key ) );
 				}
- 			}
+			}
 			else if ( NOTFOUND.equals( line ) ) {
 				if ( log.isInfoEnabled() )
 					log.info( "++++ key not found to incr/decr for key: " + key );
@@ -1196,7 +1201,7 @@ public class MemcachedClient {
 
 			sock = null;
 		}
-		
+
 		if ( sock != null ) {
 			sock.close();
 			sock = null;
@@ -1273,9 +1278,9 @@ public class MemcachedClient {
 		}
 
 		// get SockIO obj using cache key
-		SockIOPool.SockIO sock = pool.getSock( key, hashCode );
-	    
-	    if ( sock == null ) {
+		SockIOPool.SockIO sock = pool.getSock( key, hashCode, "get" );
+
+		if ( sock == null ) {
 			if ( errorHandler != null )
 				errorHandler.handleErrorOnGet( this, new IOException( "no socket to server available" ), key );
 			return null;
@@ -1286,7 +1291,7 @@ public class MemcachedClient {
 
 			if ( log.isDebugEnabled() )
 				log.debug("++++ memcache get command: " + cmd);
-			
+
 			sock.write( cmd.getBytes() );
 			sock.flush();
 
@@ -1309,7 +1314,7 @@ public class MemcachedClient {
 						log.debug( "++++ flags: " + flag );
 						log.debug( "++++ length: " + length );
 					}
-					
+
 					// read obj into buffer
 					byte[] buf = new byte[length];
 					sock.read( buf );
@@ -1322,7 +1327,7 @@ public class MemcachedClient {
 							// will need to be, and we don't want to resize it a bunch
 							GZIPInputStream gzi = new GZIPInputStream( new ByteArrayInputStream( buf ) );
 							ByteArrayOutputStream bos = new ByteArrayOutputStream( buf.length );
-							
+
 							int count;
 							byte[] tmp = new byte[2048];
 							while ( (count = gzi.read(tmp)) != -1 ) {
@@ -1392,11 +1397,13 @@ public class MemcachedClient {
 					break;
 				}
 			}
-			
+
 			sock.close();
 			sock = null;
+			//If the server is empty, simulate it as full so at the next "get", it jumps to a new server
+			if(o==null)SockIOPool.current_amount.put("get", Integer.MAX_VALUE);
 			return o;
-	    }
+		}
 		catch ( IOException e ) {
 
 			// if we have an errorHandler, use its hook
@@ -1413,7 +1420,7 @@ public class MemcachedClient {
 				log.error( "++++ failed to close socket : " + sock.toString() );
 			}
 			sock = null;
-	    }
+		}
 
 		if ( sock != null )
 			sock.close();
@@ -1488,7 +1495,7 @@ public class MemcachedClient {
 	public Map<String,Object> getMulti( String[] keys ) {
 		return getMulti( keys, null, false );
 	}
-    
+
 	/**
 	 * Retrieve multiple keys from the memcache.
 	 *
@@ -1555,7 +1562,7 @@ public class MemcachedClient {
 			}
 
 			// get SockIO obj from cache key
-			SockIOPool.SockIO sock = pool.getSock( cleanKey, hash );
+			SockIOPool.SockIO sock = pool.getSock( cleanKey, hash, "get" );
 
 			if ( sock == null ) {
 				if ( errorHandler != null )
@@ -1572,7 +1579,7 @@ public class MemcachedClient {
 			// return to pool
 			sock.close();
 		}
-		
+
 		if ( log.isInfoEnabled() )
 			log.info( "multi get socket count : " + cmdMap.size() );
 
@@ -1644,7 +1651,7 @@ public class MemcachedClient {
 					log.debug( "++++ flags: " + flag );
 					log.debug( "++++ length: " + length );
 				}
-				
+
 				// read obj into buffer
 				byte[] buf = new byte[length];
 				input.read( buf );
@@ -1652,7 +1659,7 @@ public class MemcachedClient {
 
 				// ready object
 				Object o;
-				
+
 				// check for compression
 				if ( (flag & F_COMPRESSED) == F_COMPRESSED ) {
 					try {
@@ -1661,7 +1668,7 @@ public class MemcachedClient {
 						// will need to be, and we don't want to resize it a bunch
 						GZIPInputStream gzi = new GZIPInputStream( new ByteArrayInputStream( buf ) );
 						ByteArrayOutputStream bos = new ByteArrayOutputStream( buf.length );
-						
+
 						int count;
 						byte[] tmp = new byte[2048];
 						while ( (count = gzi.read(tmp)) != -1 ) {
@@ -1786,8 +1793,8 @@ public class MemcachedClient {
 
 		// get all servers and iterate over them
 		servers = ( servers == null )
-			? pool.getServers()
-			: servers;
+		? pool.getServers()
+				: servers;
 
 		// if no servers, then return early
 		if ( servers == null || servers.length <= 0 ) {
@@ -1818,8 +1825,8 @@ public class MemcachedClient {
 				// if we get appropriate response back, then we return true
 				String line = sock.readLine();
 				success = ( OK.equals( line ) )
-					? success && true
-					: false;
+				? success && true
+						: false;
 			}
 			catch ( IOException e ) {
 
@@ -1850,6 +1857,91 @@ public class MemcachedClient {
 
 		return success;
 	}
+
+	/** 
+	 * Invalidates the cache for the passed queue name.
+	 *
+	 * Will return true only if succeeds in clearing all servers.
+	 * If pass in null, then will try to flush all servers.
+	 * 
+	 * @param queue name of the queue to be emptied
+	 * @return success true/false
+	 */
+	public boolean flush( String queue ) {
+
+		// get SockIOPool instance
+		// return false if unable to get SockIO obj
+		if ( pool == null ) {
+			log.error( "++++ unable to get SockIOPool instance" );
+			return false;
+		}
+
+		// get all servers and iterate over them
+		String [] servers = pool.getServers();
+
+		// if no servers, then return early
+		if ( servers == null || servers.length <= 0 ) {
+			log.error( "++++ no servers to flush" );
+			return false;
+		}
+
+		boolean success = true;
+
+		for ( int i = 0; i < servers.length; i++ ) {
+
+			SockIOPool.SockIO sock = pool.getConnection( servers[i] );
+			if ( sock == null ) {
+				log.error( "++++ unable to get connection to : " + servers[i] );
+				success = false;
+				if ( errorHandler != null )
+					errorHandler.handleErrorOnFlush( this, new IOException( "no socket to server available" ) );
+				continue;
+			}
+
+			// build command
+			String command = "flush "+queue+"\r\n";
+
+			try {
+				sock.write( command.getBytes() );
+				sock.flush();
+
+				// if we get appropriate response back, then we return true
+				String line = sock.readLine();
+				success = ( OK.equals( line ) )
+				? success && true
+						: false;
+			}
+			catch ( IOException e ) {
+
+				// if we have an errorHandler, use its hook
+				if ( errorHandler != null )
+					errorHandler.handleErrorOnFlush( this, e );
+
+				// exception thrown
+				log.error( "++++ exception thrown while writing bytes to server on flush" );
+				log.error( e.getMessage(), e );
+
+				try {
+					sock.trueClose();
+				}
+				catch ( IOException ioe ) {
+					log.error( "++++ failed to close socket : " + sock.toString() );
+				}
+
+				success = false;
+				sock = null;
+			}
+
+			if ( sock != null ) {
+				sock.close();
+				sock = null;
+			}
+		}
+
+		return success;
+	}
+	
+
 
 	/** 
 	 * Retrieves stats for all servers.
@@ -1890,7 +1982,7 @@ public class MemcachedClient {
 	public Map statsItems() {
 		return statsItems( null );
 	}
-	
+
 	/** 
 	 * Retrieves stats for passed in servers (or all servers).
 	 *
@@ -1904,7 +1996,7 @@ public class MemcachedClient {
 	public Map statsItems( String[] servers ) {
 		return stats( servers, "stats items\r\n", STATS );
 	}
-	
+
 	/** 
 	 * Retrieves stats items for all servers.
 	 *
@@ -1917,7 +2009,7 @@ public class MemcachedClient {
 	public Map statsSlabs() {
 		return statsSlabs( null );
 	}
-	
+
 	/** 
 	 * Retrieves stats for passed in servers (or all servers).
 	 *
@@ -1931,7 +2023,7 @@ public class MemcachedClient {
 	public Map statsSlabs( String[] servers ) {
 		return stats( servers, "stats slabs\r\n", STATS );
 	}
-	
+
 	/** 
 	 * Retrieves items cachedump for all servers.
 	 *
@@ -1945,7 +2037,7 @@ public class MemcachedClient {
 	public Map statsCacheDump( int slabNumber, int limit ) {
 		return statsCacheDump( null, slabNumber, limit );
 	}
-	
+
 	/** 
 	 * Retrieves stats for passed in servers (or all servers).
 	 *
@@ -1960,7 +2052,7 @@ public class MemcachedClient {
 	public Map statsCacheDump( String[] servers, int slabNumber, int limit ) {
 		return stats( servers, String.format( "stats cachedump %d %d\r\n", slabNumber, limit ), ITEM );
 	}
-		
+
 	private Map stats( String[] servers, String command, String lineStart ) {
 
 		if ( command == null || command.trim().equals( "" ) ) {
@@ -1970,8 +2062,8 @@ public class MemcachedClient {
 
 		// get all servers and iterate over them
 		servers = (servers == null)
-			? pool.getServers()
-			: servers;
+		? pool.getServers()
+				: servers;
 
 		// if no servers, then return early
 		if ( servers == null || servers.length <= 0 ) {
@@ -2074,20 +2166,20 @@ public class MemcachedClient {
 		}
 
 		private final class Connection {
-		
+
 			public List<ByteBuffer> incoming = new ArrayList<ByteBuffer>();
 			public ByteBuffer outgoing;
 			public SockIOPool.SockIO sock;
 			public SocketChannel channel;
 			private boolean isDone = false;
-			
+
 			public Connection( SockIOPool.SockIO sock, StringBuilder request ) throws IOException {
 				if ( log.isDebugEnabled() )
 					log.debug( "setting up connection to "+sock.getHost() );
-				
+
 				this.sock = sock;
 				outgoing = ByteBuffer.wrap( request.append( "\r\n" ).toString().getBytes() );
-				
+
 				channel = sock.getChannel();
 				if ( channel == null )
 					throw new IOException( "dead connection to: " + sock.getHost() );
@@ -2095,14 +2187,14 @@ public class MemcachedClient {
 				channel.configureBlocking( false );
 				channel.register( selector, SelectionKey.OP_WRITE, this );
 			}
-			
+
 			public void close() {
 				try {
 					if ( isDone ) {
 						// turn off non-blocking IO and return to pool
 						if ( log.isDebugEnabled() )
 							log.debug( "++++ gracefully closing connection to "+sock.getHost() );
-						
+
 						channel.configureBlocking( true );
 						sock.close();
 						return;
@@ -2111,7 +2203,7 @@ public class MemcachedClient {
 				catch ( IOException e ) {
 					log.warn( "++++ memcache: unexpected error closing normally" );
 				}
-				
+
 				try {
 					if ( log.isDebugEnabled() )
 						log.debug("forcefully closing connection to "+sock.getHost());
@@ -2121,12 +2213,12 @@ public class MemcachedClient {
 				}
 				catch ( IOException ignoreMe ) { }
 			}
-			
+
 			public boolean isDone() {
 				// if we know we're done, just say so
 				if ( isDone )         
 					return true;
-				
+
 				// else find out the hard way
 				int strPos = B_END.length-1;
 
@@ -2135,17 +2227,17 @@ public class MemcachedClient {
 					ByteBuffer buf = incoming.get( bi );
 					int pos = buf.position()-1;
 					while ( pos >= 0 && strPos >= 0 ) {
-					    if ( buf.get( pos-- ) != B_END[strPos--] )
+						if ( buf.get( pos-- ) != B_END[strPos--] )
 							return false;
 					}
 
 					bi--;
 				}
-				
+
 				isDone = strPos < 0;
 				return isDone;
 			}
-			
+
 			public ByteBuffer getBuffer() {
 				int last = incoming.size()-1;
 				if ( last >= 0 && incoming.get( last ).hasRemaining() ) {
@@ -2157,18 +2249,18 @@ public class MemcachedClient {
 					return newBuf;
 				}
 			}
-			
+
 			public String toString() {
 				return "Connection to " + sock.getHost() + " with " + incoming.size() + " bufs; done is " + isDone;
 			}
 		}
-		
+
 		public void doMulti( boolean asString, Map<String, StringBuilder> sockKeys, String[] keys, Map<String, Object> ret ) {
-		
+
 			long timeRemaining = 0;
 			try {
 				selector = Selector.open();
-				
+
 				// get the sockets, flip them to non-blocking, and set up data
 				// structures
 				conns = new Connection[sockKeys.keySet().size()];
@@ -2187,7 +2279,7 @@ public class MemcachedClient {
 
 					conns[numConns++] = new Connection( sock, sockKeys.get( host ) );
 				}
-				
+
 				// the main select loop; ends when
 				// 1) we've received data from all the servers, or
 				// 2) we time out
@@ -2195,24 +2287,24 @@ public class MemcachedClient {
 
 				long timeout = pool.getMaxBusy();
 				timeRemaining = timeout;
-				
+
 				while ( numConns > 0 && timeRemaining > 0 ) {
 					int n = selector.select( Math.min( timeout,  5000 ) );
 					if ( n > 0 ) {
-					    // we've got some activity; handle it
-					    Iterator<SelectionKey> it = selector.selectedKeys().iterator();
-					    while ( it.hasNext() ) {
-					        SelectionKey key = it.next();
-					        it.remove();
-					        handleKey( key );
-					    }
+						// we've got some activity; handle it
+						Iterator<SelectionKey> it = selector.selectedKeys().iterator();
+						while ( it.hasNext() ) {
+							SelectionKey key = it.next();
+							it.remove();
+							handleKey( key );
+						}
 					}
 					else {
-					    // timeout likely... better check
+						// timeout likely... better check
 						// TODO:  This seems like a problem area that we need to figure out how to handle.
 						log.error( "selector timed out waiting for activity" );
 					}
-					
+
 					timeRemaining = timeout - (System.currentTimeMillis() - startTime);
 				}
 			}
@@ -2225,7 +2317,7 @@ public class MemcachedClient {
 			finally {
 				if ( log.isDebugEnabled() )
 					log.debug( "Disconnecting; numConns=" + numConns + "  timeRemaining=" + timeRemaining );
-				
+
 				// run through our conns and either return them to the pool
 				// or forcibly close them
 				try {
@@ -2233,13 +2325,13 @@ public class MemcachedClient {
 						selector.close();
 				}
 				catch ( IOException ignoreMe ) { }
-				
+
 				for ( Connection c : conns ) {
 					if ( c != null )
 						c.close();
 				}
 			}
-		
+
 			// Done!  Build the list of results and return them.  If we get
 			// here by a timeout, then some of the connections are probably
 			// not done.  But we'll return what we've got...
@@ -2254,46 +2346,46 @@ public class MemcachedClient {
 				}
 			}
 		}
-		
+
 		private void handleError( Throwable e, String[] keys ) {
-		    // if we have an errorHandler, use its hook
-		    if ( errorHandler != null )
-		        errorHandler.handleErrorOnGet( MemcachedClient.this, e, keys );
-		
-		    // exception thrown
-		    log.error( "++++ exception thrown while getting from cache on getMulti" );
-		    log.error( e.getMessage() );
+			// if we have an errorHandler, use its hook
+			if ( errorHandler != null )
+				errorHandler.handleErrorOnGet( MemcachedClient.this, e, keys );
+
+			// exception thrown
+			log.error( "++++ exception thrown while getting from cache on getMulti" );
+			log.error( e.getMessage() );
 		}
-		
+
 		private void handleKey( SelectionKey key ) throws IOException {
 			if ( log.isDebugEnabled() )
 				log.debug( "handling selector op " + key.readyOps() + " for key " + key );
-			
+
 			if ( key.isReadable() )
 				readResponse( key );
 			else if ( key.isWritable() )
 				writeRequest( key );
 		}
-		
+
 		public void writeRequest( SelectionKey key ) throws IOException {
 			ByteBuffer buf = ((Connection) key.attachment()).outgoing;
 			SocketChannel sc = (SocketChannel)key.channel();
-			
+
 			if ( buf.hasRemaining() ) {
 				if ( log.isDebugEnabled() )
-				    log.debug( "writing " + buf.remaining() + "B to " + ((SocketChannel) key.channel()).socket().getInetAddress() );
+					log.debug( "writing " + buf.remaining() + "B to " + ((SocketChannel) key.channel()).socket().getInetAddress() );
 
 				sc.write( buf );
 			}
-			
+
 			if ( !buf.hasRemaining() ) {
-			    if ( log.isDebugEnabled() )
-			        log.debug( "switching to read mode for server " + ((SocketChannel)key.channel()).socket().getInetAddress() );
+				if ( log.isDebugEnabled() )
+					log.debug( "switching to read mode for server " + ((SocketChannel)key.channel()).socket().getInetAddress() );
 
 				key.interestOps( SelectionKey.OP_READ );
 			}
 		}
-		
+
 		public void readResponse( SelectionKey key ) throws IOException {
 			Connection conn = (Connection)key.attachment();
 			ByteBuffer buf = conn.getBuffer();
@@ -2301,7 +2393,7 @@ public class MemcachedClient {
 			if ( count > 0 ) {
 				if ( log.isDebugEnabled() )
 					log.debug( "read  " + count + " from " + conn.channel.socket().getInetAddress() );
-				
+
 				if ( conn.isDone() ) {
 					if ( log.isDebugEnabled() )
 						log.debug( "connection done to  " + conn.channel.socket().getInetAddress() );
